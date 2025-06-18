@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.distributed as dist
+from datetime import timedelta
 
 def main():
     # Get rank and world size from environment
@@ -12,7 +13,10 @@ def main():
     torch.cuda.set_device(local_rank)
 
     # Initialize the process group
-    dist.init_process_group(backend="nccl")
+    dist.init_process_group(
+        backend="nccl",
+        timeout=timedelta(minutes=10)
+    )
 
     # Create a tensor filled with the rank value
     tensor = torch.ones(1).cuda() * rank
