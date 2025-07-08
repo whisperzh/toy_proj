@@ -1,33 +1,57 @@
 import os
 import torch
 import torch.distributed as dist
-from datetime import timedelta
+import time
 
-def main():
-    # Get rank and world size from environment
+def init_process_group():
     rank = int(os.environ["RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
-    local_rank = int(os.environ["LOCAL_RANK"])
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
 
-    # Set the correct GPU
+    # 指定当前进程的 GPU
     torch.cuda.set_device(local_rank)
 
-    # Initialize the process group
     dist.init_process_group(
         backend="nccl",
-        timeout=timedelta(minutes=10)
+        init_method=os.environ["INIT_METHOD"],  # 如 tcp://<主节点IP>:23456
+        world_size=world_size,
+        rank=rank
     )
 
-    # Create a tensor filled with the rank value
-    tensor = torch.ones(1).cuda() * rank
-    print(f"[Rank {rank}] Before all_reduce: {tensor.item()}")
+    return rank, local_rank
 
-    # All-reduce: sum tensor across all ranks
-    dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+def measure_send_recv(rank, local_rank):
+    device = torch.device(f"cuda:{local_rank}")
+    tensor_size = 1024 * 1024 * 100  # 100MB
+    send_tensor = torch.randn(tensor_size, dtype=torch.float32, device=device)
+    recv_tensor = torch.empty_like(send_tensor)
 
-    print(f"[Rank {rank}] After all_reduce: {tensor.item()}")
+    # 确保 CUDA 操作完成
+    torch.cuda.synchronize()
+    dist.barrier()
 
-    dist.destroy_process_group()
+    if rank == 0:
+        # Rank 0 发送 tensor 给 Rank 1
+        start_time = time.time()
+        dist.send(send_tensor, dst=1)
+        torch.cuda.synchronize()
+        send_duration = time.time() - start_time
+        print(f"[Rank 0] Send done in {send_duration*1000:.2f} ms")
+
+        # 然后接收回来
+        start_time = time.time()
+        dist.recv(recv_tensor, src=1)
+        torch.cuda.synchronize()
+        recv_duration = time.time() - start_time
+        print(f"[Rank 0] Recv done in {recv_duration*1000:.2f} ms")
+
+    elif rank == 1:
+        dist.recv(recv_tensor, src=0)
+        torch.cuda.synchronize()
+
+        dist.send(recv_tensor, dst=0)
+        torch.cuda.synchronize()
 
 if __name__ == "__main__":
-    main()
+    rank, local_rank = init_process_group()
+    measure_send_recv(rank, local_rank)
