@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 project(nccl_dynamic LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
 # NCCL & CUDA
 include_directories(/usr/local/cuda/include)
