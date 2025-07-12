@@ -21,8 +21,9 @@ def init_dist():
 
 def cleanup():
     if dist.is_initialized():
+        rank = dist.get_rank()
         dist.destroy_process_group()
-        print(f"[Rank {dist.get_rank()}] Destroyed group.")
+        print(f"[Rank {rank}] Destroyed group.")
 
 def training_loop():
     rank = dist.get_rank()
@@ -36,6 +37,7 @@ def training_loop():
             print(f"[Rank {rank}] Detected reload.flag, reloading...")
             os.remove("reload.flag")
             cleanup()
+            time.sleep(1)
             init_dist()
 
 if __name__ == "__main__":
