@@ -28,14 +28,30 @@ def cleanup():
 def training_loop():
     rank = dist.get_rank()
     for i in range(1000):
-        tensor = torch.ones(1).cuda()
+        tensor = torch.tensor([rank]).cuda()
         dist.all_reduce(tensor)
         print(f"[Rank {rank}] Step {i}, Tensor = {tensor.item()}")
         time.sleep(2)
 
-        if os.path.exists("reload.flag"):
-            print(f"[Rank {rank}] Detected reload.flag, reloading...")
-            os.remove("reload.flag")
+        # 所有rank通信完成，准备检测reload
+        dist.barrier()
+
+        # 💡 只有rank 0读取 reload.flag，其余等它广播决定
+        if rank == 0:
+            need_reload = int(os.path.exists("reload.flag"))
+            if need_reload:
+                os.remove("reload.flag")
+        else:
+            need_reload = 0
+
+        # 所有rank都使用rank 0的判断结果
+        need_reload_tensor = torch.tensor([need_reload], device="cuda")
+        dist.broadcast(need_reload_tensor, src=0)
+
+        dist.barrier()
+
+        if need_reload_tensor.item() == 1:
+            print(f"[Rank {rank}] Reloading distributed group...")
             cleanup()
             time.sleep(1)
             init_dist()
