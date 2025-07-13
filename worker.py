@@ -28,9 +28,21 @@ def cleanup():
 def training_loop():
     rank = dist.get_rank()
     for i in range(1000):
-        tensor = torch.tensor([rank]).cuda()
+        tensor =  torch.ones(1024 * 1024, device='cuda')
+        
+        #测时间
+        torch.cuda.synchronize()
+        start = time.time()
+        
         dist.all_reduce(tensor)
-        print(f"[Rank {rank}] Step {i}, Tensor = {tensor.item()}")
+        
+        #测时间结束
+        torch.cuda.synchronize()
+        end = time.time()
+        
+        latency_ms = (end - start) * 1000
+        print(f"[Rank {rank}] Step {i}, Tensor = {tensor.shape}, AllReduce took {latency_ms:.3f} ms")
+        
         time.sleep(2)
 
         # 所有rank通信完成，准备检测reload
